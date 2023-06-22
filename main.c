@@ -4,6 +4,8 @@
 
 #define SCREEN_WIDTH   1280
 #define SCREEN_HEIGHT  720
+// How far from the center of the viewing plain (1 unit away from camera) should the screen be?
+#define FOV 1
 
 // Graphics initalizeation
 SDL_Window* window_setup() {
@@ -92,10 +94,10 @@ Point2 world_to_camera_space(struct Camera* camera, Point2 world) {
 }
 
 // Convert a Point in camera space to normalized screen space.
-Point2 camera_to_screen_space(Point2 cameraspace, float z) {
+Point2 camera_to_screen_space(Point2 cameraspace, float z, float fov) {
 	return (Point2) {
-		.x = cameraspace.x / cameraspace.y,
-		.y = z / cameraspace.y
+		.x = cameraspace.x / cameraspace.y / fov,
+		.y = z / cameraspace.y / fov,
 	};
 }
 
@@ -108,61 +110,42 @@ Point2 normalized_screen_to_pixel(Point2 world, float screenh, float screenw) {
 }
 
 // All in one function to go from camera space to pixels
-Point2 camera_to_pixel_space(Point2 camera, float z, float screenh, float screenw) {
-	return normalized_screen_to_pixel(camera_to_screen_space(camera,z), screenh, screenw);
+Point2 camera_to_pixel_space(Point2 camera, float z, float screenh, float screenw, float fov) {
+	return normalized_screen_to_pixel(camera_to_screen_space(camera,z,fov), screenh, screenw);
 }
 
-// Points should be in +x order.
 // Returns false if the wall is fully outside, true otherwize
-int clip_to_frustum(Point2* w0, Point2* w1) {
+int clip_to_frustum(Point2* w0, Point2* w1, float fov) {
 	float near_plane = 0.1;
-	float far_plane = 100;
-	float fov = 1;
-	Point2 frustum[4] = {
-		{.x = near_plane * fov, .y = near_plane}, //0
-		{.x = far_plane * fov, .y = far_plane}, //1
-		{.x = far_plane * -fov, .y = far_plane}, //2
-		{.x = near_plane * -fov, .y = near_plane}, //3
-	};
 
-	// Clip to left side of frursum
-	Point2 left_clip = intersect_line_segments(frustum[2], frustum[3], *w0, *w1);
-	if (isnormal(left_clip.x)) {
-		*w0 = left_clip;
+	// Clip to the near plane
+	
+	// If both are behind the near plane, reject the wall
+	if (w0 -> y < near_plane && w1 -> y < near_plane) return 0;
+
+	// If only one is, move it 
+	if (w0->y < near_plane) {
+		*w0 = intersect_lines((Point2) {1, near_plane}, (Point2) {-1, near_plane}, *w0, *w1);
 	}
-
-	// Clip to right side of frursum
-	Point2 right_clip = intersect_line_segments(frustum[0], frustum[1], *w0, *w1);
-	if (isnormal(right_clip.x)) {
-		*w1 = right_clip;
-	}
-
-	if (w0->x > w1->x) return 0;
-
-	// Sort by y cordinate
-	Point2* lowest_y;
-	Point2* highest_y;
-	if (w0->y > w1->y) {
-		lowest_y = w1;
-		highest_y = w0;
-	} else {
-		lowest_y = w1;
-		highest_y = w0;
-
+	if (w1->y < near_plane) {
+		*w1 = intersect_lines((Point2) {1, near_plane}, (Point2) {-1, near_plane}, *w0, *w1);
 	}
 	
-	if (lowest_y->y > far_plane) return 0;
-	if (highest_y->y < near_plane) return 0;
+	// Clip by angle
+	float angle0 = w0->x / w0->y;
+	float angle1 = w1->x / w1->y;
 	
-	Point2 near_clip = intersect_line_segments(frustum[0], frustum[3], *w0, *w1);
-	if (isnormal(near_clip.x)) {
-		*lowest_y = near_clip;
-	}
+	// If both endpoints are out of view, on the same side, reject the wall
+	if (angle0 > fov && angle1 > fov) return 0;
+	if (angle0 < -fov && angle1 < -fov) return 0;
 	
-	Point2 far_clip = intersect_line_segments(frustum[1], frustum[2], *w0, *w1);
-	if (isnormal(far_clip.x)) {
-		*highest_y = far_clip;
-	}
+	// Otherwize, move the points inside of the view.
+	if (angle1 > fov) *w1 = intersect_lines((Point2) {0, 0}, (Point2) {fov, 1}, *w0, *w1);
+	if (angle1 < -fov) *w1 = intersect_lines((Point2) {0, 0}, (Point2) {-fov, 1}, *w0, *w1);
+	
+	if (angle0 > fov) *w0 = intersect_lines((Point2) {0, 0}, (Point2) {fov, 1}, *w0, *w1);
+	if (angle0 < -fov) *w0 = intersect_lines((Point2) {0, 0}, (Point2) {-fov, 1}, *w0, *w1);
+
 
 	return 1;
 }
@@ -188,21 +171,21 @@ void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct 
 		Point2 cspace0 = world_to_camera_space(camera, wallstart.location);
 		Point2 cspace1 = world_to_camera_space(camera, wallend.location);
 		
+		// Wall fully behind camera, do not render
+		if (cspace0.y <= 0 && cspace1.y <= 0) continue;
+		
+		// Clip to fustrum, if fully outside, dont render.	
+		if (!clip_to_frustum(&cspace0, &cspace1, FOV)) continue;
+		
 		// Wall verteces are in acending x order, as seen from the inside of the room.
 		// If this is not the case, we are looking at the backside of the wall, and should skip rendering it
-//		if (cspace1.x <= cspace0.x) continue;
-	
-		// Clip to fustrum, if fully outside, dont render.	
-		if (!clip_to_frustum(&cspace0, &cspace1)) continue;
-		
-		// Wall fully behind camera, do not render
-//		if (cspace0.y <= 0 && cspace1.y <= 0) continue;
+		if (cspace1.x/cspace1.y <= cspace0.x/cspace0.y) continue;
 		
 		// Map to screen space	
-		struct Point2 wall_corner_0_u = camera_to_pixel_space(cspace0, 0.5, SCREEN_HEIGHT, SCREEN_WIDTH);
-		struct Point2 wall_corner_0_l = camera_to_pixel_space(cspace0, -0.5, SCREEN_HEIGHT, SCREEN_WIDTH);
-		struct Point2 wall_corner_1_u = camera_to_pixel_space(cspace1, 0.5, SCREEN_HEIGHT, SCREEN_WIDTH);
-		struct Point2 wall_corner_1_l = camera_to_pixel_space(cspace1, -0.5, SCREEN_HEIGHT, SCREEN_WIDTH);
+		struct Point2 wall_corner_0_u = camera_to_pixel_space(cspace0, 0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
+		struct Point2 wall_corner_0_l = camera_to_pixel_space(cspace0, -0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
+		struct Point2 wall_corner_1_u = camera_to_pixel_space(cspace1, 0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
+		struct Point2 wall_corner_1_l = camera_to_pixel_space(cspace1, -0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
 
 		// Draw filled trapiziod defined by projected points
 		// There might be a faster drawing algoritm than this
@@ -233,7 +216,7 @@ int main() {
 	assert(canvas);
 
 	struct Map* map = new_test_map();
-	struct Camera camera = {.location = {.roomid = 0, .x = 0, .y = 0}};
+	struct Camera camera = {.location = {.roomid = 0, .x = 0, .y = -4}};
 
 	// Sanity check, make sure the player has a valid room
 	assert(map->length > camera.location.roomid);

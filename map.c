@@ -58,22 +58,53 @@ struct Point2 point2_div_scaler(struct Point2 l, float scale) {
 	return o;
 }
 
+// Math stolen from https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection#Given_two_points_on_each_line
 struct Point2 intersect_line_segments(Point2 a0, Point2 a1, Point2 b0, Point2 b1) {
-        float d = ((a0.x - a1.x) * (b0.y - b1.y)) - ((a0.y - a1.y) * (b0.x - b1.x));
+        // The end point of the line segments if translated so that the start is at 0, 0
+	Point2 v0 = {.x = a1.x - a0.x, .y = a1.y - a0.y};
+	Point2 v1 = {.x = b1.x - b0.x, .y = b1.y - b0.y};
 
-        if (fabsf(d) < 0.000001) return (Point2) {NAN, NAN};
+	float d = (-v1.x * v0.y + v0.x * v1.y);
+	
+	// Lines are collinear or paralel, or very close to it.
+	if (fabsf(d) < 0.00001)
+		return (Point2) {NAN, NAN};
 
-        float t = ((a0.x - b0.x) * (b0.y - b1.y)) - ((a0.x - b0.x) * (b0.x - b1.x)) / d;
-        float u = ((a0.x - b0.x) * (a0.y - a1.y)) - ((a0.x - b0.x) * (a0.x - a1.x)) / d;
+	// Find how far along each line segment the intersection is.
+	float t =  (-v0.y * (a0.x - b0.x) + v0.x * (a0.y - b0.y)) / d;
+	float u =  ( v1.x * (a0.y - b0.y) - v1.y * (a0.x - b0.x)) / d;
 
-        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+	// If it is withing both segments, return it.
+	if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
                 return (Point2) {
-                        a0.x + (t * (a1.x - a0.x)),
-                        a0.y + (t * (a1.y - a0.y))
+                        a0.x + (u * v0.x),
+                        a0.y + (u * v0.y)
                 };
         } else {
                 return (Point2) {NAN, NAN};
         }
+}
+
+// Math stolen from https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection#Given_two_points_on_each_line
+struct Point2 intersect_lines(Point2 a0, Point2 a1, Point2 b0, Point2 b1) {
+	// The end point of the line segments if translated so that the start is at 0, 0
+	Point2 v0 = {.x = a1.x - a0.x, .y = a1.y - a0.y};
+	Point2 v1 = {.x = b1.x - b0.x, .y = b1.y - b0.y};
+
+	float d = (-v1.x * v0.y + v0.x * v1.y);
+	
+	// Lines are collinear or paralel, or very close to it.
+	if (fabsf(d) < 0.00001)
+		return (Point2) {NAN, NAN};
+
+	// Find how far along each line segment the intersection is.
+	float t =  (-v0.y * (a0.x - b0.x) + v0.x * (a0.y - b0.y)) / d;
+	float u =  ( v1.x * (a0.y - b0.y) - v1.y * (a0.x - b0.x)) / d;
+
+	return (Point2) {
+		a0.x + (u * v0.x),
+		a0.y + (u * v0.y)
+	};
 }
 
 float lerp(float x0, float x1, float d) {
