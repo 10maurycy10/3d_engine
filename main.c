@@ -39,26 +39,34 @@ void do_input(struct Camera* camera) {
 
 	uint8_t* keyboard = SDL_GetKeyboardState(NULL);
 
+	// Handle rotation inputs
 	if (keyboard[SDL_SCANCODE_Q]) {
-		camera->angle -= 0.01;
+		camera->angle -= 0.05;
 	}
 	if (keyboard[SDL_SCANCODE_E]) {
-		camera->angle += 0.01;
+		camera->angle += 0.05;
 	}
 
-	// TODO Move relitive to camera rotation
+	// Vector to store movement intent
+	// The camera is facing y+.
+	Point2 translation = {0, 0};
 	if (keyboard[SDL_SCANCODE_W]) {
-		camera->location.y += 0.05;
+		translation.y += 0.05;
 	}
 	if (keyboard[SDL_SCANCODE_S]) {
-		camera->location.y -= 0.05;
+		translation.y -= 0.05;
 	}
 	if (keyboard[SDL_SCANCODE_A]) {
-		camera->location.x -= 0.05;
+		translation.x -= 0.05;
 	}
 	if (keyboard[SDL_SCANCODE_D]) {
-		camera->location.x += 0.05;
+		translation.x += 0.05;
 	}
+	
+	// Rotate intent vector by *negative* camera rotation.
+	float angle = -camera->angle;
+	camera->location.x += translation.x * cos(angle) - translation.y * sin(angle);
+	camera->location.y += translation.x * sin(angle) + translation.y * cos(angle);
 }
 
 /////////////////////////
@@ -187,10 +195,10 @@ void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct 
 		struct Point2 wall_corner_1_u = camera_to_pixel_space(cspace1, 0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
 		struct Point2 wall_corner_1_l = camera_to_pixel_space(cspace1, -0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
 
-		// Draw filled trapiziod defined by projected points
+		// Draw filled trapiziod defined by projected points, and fill the area above and below black
 		// There might be a faster drawing algoritm than this
 		int lines = wall_corner_1_u.x - wall_corner_0_u.x;
-		for (int line = 0; line < lines; line++) {
+		for (int line = 0; line <= lines; line++) {
 			int pixelx = wall_corner_0_u.x + line;
 			float distance_drawn = (float)line / (float)lines;
 			int y0 = lerp(wall_corner_0_u.y, wall_corner_1_u.y, distance_drawn);
@@ -198,6 +206,8 @@ void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct 
 			y0 = MAX(y0, 0);
 			y1 = MIN(y1, SCREEN_HEIGHT);
 			assert(y0 <= y1);
+			vline(canvas, pixelx, 0, y0, 255, 0, 0);
+			vline(canvas, pixelx, y1, SCREEN_HEIGHT, 255, 0, 0);
 			vline(canvas, pixelx, y0, y1, 255, 255, 255);
 		}
 	}	
