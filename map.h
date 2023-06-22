@@ -62,7 +62,9 @@ void free_room(struct Room*);
 void free_map(struct Map*);
 
 // Math functions
-#define IS_NAN(a) (a != a)
+
+#define MAX(a, b) ((a)>(b)?(a):(b))
+#define MIN(a, b) ((a)>(b)?(b):(a))
 
 struct Point2 point2_mul_scaler(struct Point2, float scale);
 struct Point2 point2_div_scaler(struct Point2, float scale);

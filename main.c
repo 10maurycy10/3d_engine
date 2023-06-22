@@ -44,17 +44,18 @@ void do_input(struct Camera* camera) {
 		camera->angle += 0.01;
 	}
 
+	// TODO Move relitive to camera rotation
 	if (keyboard[SDL_SCANCODE_W]) {
-		camera->location.y += 0.01;
+		camera->location.y += 0.05;
 	}
 	if (keyboard[SDL_SCANCODE_S]) {
-		camera->location.y -= 0.01;
+		camera->location.y -= 0.05;
 	}
 	if (keyboard[SDL_SCANCODE_A]) {
-		camera->location.x -= 0.01;
+		camera->location.x -= 0.05;
 	}
 	if (keyboard[SDL_SCANCODE_D]) {
-		camera->location.x += 0.01;
+		camera->location.x += 0.05;
 	}
 }
 
@@ -74,6 +75,10 @@ void vline(SDL_Surface* canvas, int x, int y0, int y1, int r, int g, int b) {
 		set_pixel(canvas, x, y, r, g, b);
 	}
 }
+
+////////////////////////////////
+// Cordinate space convertion //
+////////////////////////////////
 
 // Convert a point from world space to camera based cordinates
 // In this system, the camera is at 0,0 and facing the +y direction.
@@ -107,6 +112,61 @@ Point2 camera_to_pixel_space(Point2 camera, float z, float screenh, float screen
 	return normalized_screen_to_pixel(camera_to_screen_space(camera,z), screenh, screenw);
 }
 
+// Points should be in +x order.
+// Returns false if the wall is fully outside, true otherwize
+int clip_to_frustum(Point2* w0, Point2* w1) {
+	float near_plane = 0.1;
+	float far_plane = 100;
+	float fov = 1;
+	Point2 frustum[4] = {
+		{.x = near_plane * fov, .y = near_plane}, //0
+		{.x = far_plane * fov, .y = far_plane}, //1
+		{.x = far_plane * -fov, .y = far_plane}, //2
+		{.x = near_plane * -fov, .y = near_plane}, //3
+	};
+
+	// Clip to left side of frursum
+	Point2 left_clip = intersect_line_segments(frustum[2], frustum[3], *w0, *w1);
+	if (isnormal(left_clip.x)) {
+		*w0 = left_clip;
+	}
+
+	// Clip to right side of frursum
+	Point2 right_clip = intersect_line_segments(frustum[0], frustum[1], *w0, *w1);
+	if (isnormal(right_clip.x)) {
+		*w1 = right_clip;
+	}
+
+	if (w0->x > w1->x) return 0;
+
+	// Sort by y cordinate
+	Point2* lowest_y;
+	Point2* highest_y;
+	if (w0->y > w1->y) {
+		lowest_y = w1;
+		highest_y = w0;
+	} else {
+		lowest_y = w1;
+		highest_y = w0;
+
+	}
+	
+	if (lowest_y->y > far_plane) return 0;
+	if (highest_y->y < near_plane) return 0;
+	
+	Point2 near_clip = intersect_line_segments(frustum[0], frustum[3], *w0, *w1);
+	if (isnormal(near_clip.x)) {
+		*lowest_y = near_clip;
+	}
+	
+	Point2 far_clip = intersect_line_segments(frustum[1], frustum[2], *w0, *w1);
+	if (isnormal(far_clip.x)) {
+		*highest_y = far_clip;
+	}
+
+	return 1;
+}
+
 void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct Map* map) {
 	// Calculate and store sin and cos of camera angle, this is required for rotation
 	camera->angle_cos = cos(camera->angle);
@@ -114,8 +174,7 @@ void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct 
 	
 	struct Room* room = map->rooms[roomid];
 	// For every wall in the players room...
-	// TODO render every wall
-	for (int wallid = 3; wallid < room->length; wallid++) {
+	for (int wallid = 0; wallid < room->length; wallid++) {
 		// Find the start and end vertex.
 		// The wall parameters sould be stored in the first one
 		struct WallVertex wallstart = room->walls[wallid];
@@ -131,14 +190,14 @@ void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct 
 		
 		// Wall verteces are in acending x order, as seen from the inside of the room.
 		// If this is not the case, we are looking at the backside of the wall, and should skip rendering it
-		if (cspace1.x <= cspace0.x) continue;
-
-
+//		if (cspace1.x <= cspace0.x) continue;
+	
+		// Clip to fustrum, if fully outside, dont render.	
+		if (!clip_to_frustum(&cspace0, &cspace1)) continue;
+		
 		// Wall fully behind camera, do not render
-		if (cspace0.x <= 0 && cspace1.x <= 0) continue;
-
-		// TODO Clip to frustrum
-
+//		if (cspace0.y <= 0 && cspace1.y <= 0) continue;
+		
 		// Map to screen space	
 		struct Point2 wall_corner_0_u = camera_to_pixel_space(cspace0, 0.5, SCREEN_HEIGHT, SCREEN_WIDTH);
 		struct Point2 wall_corner_0_l = camera_to_pixel_space(cspace0, -0.5, SCREEN_HEIGHT, SCREEN_WIDTH);
@@ -153,9 +212,11 @@ void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct 
 			float distance_drawn = (float)line / (float)lines;
 			int y0 = lerp(wall_corner_0_u.y, wall_corner_1_u.y, distance_drawn);
 			int y1 = lerp(wall_corner_0_l.y, wall_corner_1_l.y, distance_drawn);
+			y0 = MAX(y0, 0);
+			y1 = MIN(y1, SCREEN_HEIGHT);
+			assert(y0 <= y1);
 			vline(canvas, pixelx, y0, y1, 255, 255, 255);
 		}
-		return;
 	}	
 }
 
