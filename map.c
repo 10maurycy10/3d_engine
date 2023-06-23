@@ -98,7 +98,6 @@ struct Point2 intersect_lines(Point2 a0, Point2 a1, Point2 b0, Point2 b1) {
 		return (Point2) {NAN, NAN};
 
 	// Find how far along each line segment the intersection is.
-	float t =  (-v0.y * (a0.x - b0.x) + v0.x * (a0.y - b0.y)) / d;
 	float u =  ( v1.x * (a0.y - b0.y) - v1.y * (a0.x - b0.x)) / d;
 
 	return (Point2) {

@@ -73,17 +73,9 @@ void do_input(struct Camera* camera) {
 // Graphics Primitives //
 /////////////////////////
 
-void set_pixel(SDL_Surface* canvas, int x, int y, int r, int g, int b) {
-	((uint8_t*)canvas->pixels)[(x*4 + y * canvas->pitch)+0] = r;
-	((uint8_t*)canvas->pixels)[(x*4 + y * canvas->pitch)+1] = g;
-	((uint8_t*)canvas->pixels)[(x*4 + y * canvas->pitch)+2] = b;
-	((uint8_t*)canvas->pixels)[(x*4 + y * canvas->pitch)+3] = 255;
-}
-
-void vline(SDL_Surface* canvas, int x, int y0, int y1, int r, int g, int b) {
-	for (int y = y0; y < y1; y++) {
-		set_pixel(canvas, x, y, r, g, b);
-	}
+void vline(SDL_Renderer* canvas, int x, int y0, int y1, int r, int g, int b) {
+	SDL_SetRenderDrawColor(canvas, r, g, b, 255);
+	SDL_RenderDrawLine(canvas, x, y0, x, y1);
 }
 
 ////////////////////////////////
@@ -158,7 +150,7 @@ int clip_to_frustum(Point2* w0, Point2* w1, float fov) {
 	return 1;
 }
 
-void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct Map* map) {
+void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct Map* map) {
 	// Calculate and store sin and cos of camera angle, this is required for rotation
 	camera->angle_cos = cos(camera->angle);
 	camera->angle_sin = sin(camera->angle);
@@ -198,6 +190,7 @@ void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct 
 		// Draw filled trapiziod defined by projected points, and fill the area above and below black
 		// There might be a faster drawing algoritm than this
 		int lines = wall_corner_1_u.x - wall_corner_0_u.x;
+		if (lines == 0) continue;
 		for (int line = 0; line <= lines; line++) {
 			int pixelx = wall_corner_0_u.x + line;
 			float distance_drawn = (float)line / (float)lines;
@@ -206,8 +199,8 @@ void render_room(SDL_Surface* canvas, struct Camera* camera, int roomid, struct 
 			y0 = MAX(y0, 0);
 			y1 = MIN(y1, SCREEN_HEIGHT);
 			assert(y0 <= y1);
-			vline(canvas, pixelx, 0, y0, 255, 0, 0);
-			vline(canvas, pixelx, y1, SCREEN_HEIGHT, 255, 0, 0);
+			vline(canvas, pixelx, 0, y0, 0, 0, 0);
+			vline(canvas, pixelx, y1, SCREEN_HEIGHT, 0, 0, 0);
 			vline(canvas, pixelx, y0, y1, 255, 255, 255);
 		}
 	}	
@@ -217,13 +210,8 @@ int main() {
 	// Open a window
 	SDL_Window* window = window_setup();
 	assert(window);
-	SDL_Surface* window_surface = SDL_GetWindowSurface(window);
-	assert(window_surface);
-
-	// Create a buffer for drawing.
-	// Alpha channel will serve as a flag for storing if a pixel has been drawn.
-	SDL_Surface *canvas = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_RGBA8888);
-	assert(canvas);
+	SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
+	assert(renderer);
 
 	struct Map* map = new_test_map();
 	struct Camera camera = {.location = {.roomid = 0, .x = 0, .y = -4}};
@@ -234,23 +222,17 @@ int main() {
 	while (1) {
 		// Handle inputs
 		do_input(&camera);
-	
-		// Prepare for drwwing
-		SDL_LockSurface(canvas);
+
+		// Fill viewport with hot pink to make unrendered areas easly visiable
+		SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
+		SDL_RenderClear(renderer);
+
+		render_room(renderer, &camera, camera.location.roomid, map);
 		
-		// Fill with hot pink to make unrendered areas obvios. 
-		SDL_FillRect(canvas, NULL, 0xFF00FFFF);
-
-		render_room(canvas, &camera, camera.location.roomid, map);
-
-		// Done drawing
-		SDL_UnlockSurface(canvas);
-
-		// Copy the buffer to the window
-		SDL_BlitSurface(canvas, NULL, window_surface, NULL);
-		SDL_UpdateWindowSurface(window);
+		SDL_RenderPresent(renderer);
 	}
 
+	SDL_DestroyRenderer(renderer);
 	free_map(map);
 	return 0;
 }
