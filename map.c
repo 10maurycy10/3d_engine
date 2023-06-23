@@ -81,6 +81,7 @@ struct Map* load_map_from_file(FILE* file) {
 	while (1) {
 		line = NULL;
 		read = getline(&line, &length, file);
+		printf("%s", line);
 		if (read == -1) break;
 
 		// Check for prefixes
@@ -97,7 +98,7 @@ struct Map* load_map_from_file(FILE* file) {
 			assert(map);
 			assert(map->length != next_room);
 			// Ensure the last room was filled
-			if (room) assert(room->length == next_room);
+			if (room) assert(room->length == next_wall);
 
 			// Allocate the room
 			int room_size;
@@ -119,6 +120,24 @@ struct Map* load_map_from_file(FILE* file) {
 			room->walls[next_wall].r = r;
 			room->walls[next_wall].g = g;
 			room->walls[next_wall].b = b;
+			room->walls[next_wall].portal_idx = -1;
+			room->walls[next_wall].location.x = x;
+			room->walls[next_wall].location.y = y;
+			next_wall++; 
+		} else if (!strncmp("PORTAL ", line, strlen("PORTAL "))) {
+			// Ensure there is space in the current room
+			assert(room);
+			assert(room->length != next_wall);
+			
+			// Add the portal
+			float x, y;
+			int portalidx;
+			assert(sscanf(line, "PORTAL %f %f %d\n", &x, &y, &portalidx) == 3);
+			room->walls[next_wall].r = 255;
+			room->walls[next_wall].g = 0;
+			room->walls[next_wall].b = 255;
+
+			room->walls[next_wall].portal_idx = portalidx;
 			room->walls[next_wall].location.x = x;
 			room->walls[next_wall].location.y = y;
 			next_wall++; 

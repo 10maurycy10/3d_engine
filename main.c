@@ -3,7 +3,7 @@
 #include <SDL2/SDL.h>
 
 // How far from the center of the viewing plain (1 unit away from camera) should the screen be?
-#define FOV 0.6
+#define FOV .6
 
 
 
@@ -88,8 +88,32 @@ int clip_to_frustum(Point2* w0, Point2* w1, float fov) {
 	return 1;
 }
 
+// A trapaziodal viewport for rendering
+typedef struct Bound {
+	int x0;
+	int x1;
+//	int min_y0;
+//	int max_y0;
+//	int min_y1;
+//	int max_y1;
+} Bound;
+
+Bound whole_screen(SDL_Renderer* canvas) {
+	int screen_height, screen_width;
+	assert(!SDL_GetRendererOutputSize(canvas, &screen_width, &screen_height));
+
+	return (Bound) {
+		.x0 = 0,
+		.x1 = screen_width,
+//		min_y0 = 0,
+//		max_y0 = screen_height,
+//		min_y1 = 0,
+//		max_y1 = 0,
+	};
+}
+
 // This is the main rendering function, it renders a single room (section of convex geometry).
-void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct Map* map) {
+void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct Map* map, struct Bound bound) {
 	int screen_height, screen_width;
 	assert(!SDL_GetRendererOutputSize(canvas, &screen_width, &screen_height));
 
@@ -129,21 +153,45 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 		struct Point2 wall_corner_1_u = camera_to_pixel_space(cspace1, 0.5, screen_height, screen_width, FOV);
 		struct Point2 wall_corner_1_l = camera_to_pixel_space(cspace1, -0.5, screen_height, screen_width, FOV);
 
-		// Draw filled trapiziod defined by projected points, and fill the area above and below black
-		// There might be a faster drawing algoritm than this
-		int lines = wall_corner_1_u.x - wall_corner_0_u.x;
-		if (lines == 0) continue;
-		for (int line = 0; line <= lines; line++) {
-			int pixelx = wall_corner_0_u.x + line;
-			float distance_drawn = (float)line / (float)lines;
-			int y0 = lerp(wall_corner_0_u.y, wall_corner_1_u.y, distance_drawn);
-			int y1 = lerp(wall_corner_0_l.y, wall_corner_1_l.y, distance_drawn);
-			y0 = MAX(y0, 0);
-			y1 = MIN(y1, screen_height);
-			assert(y0 <= y1);
-			vline(canvas, pixelx, 0, y0, 0, 0, 0);
-			vline(canvas, pixelx, y1, screen_height, 0, 0, 0);
-			vline(canvas, pixelx, y0, y1, wallstart.r, wallstart.g, wallstart.b);
+		// In the case of a normal wall, draw normaly.
+		if (wallstart.portal_idx == -1) {
+			// Draw filled trapiziod defined by projected points, and fill the area above and below black
+			// There might be a faster drawing algoritm than this
+			int lines = wall_corner_1_u.x - wall_corner_0_u.x;
+			if (lines == 0) continue;
+
+			// Take bounds into account
+			int startline = 0;
+			int endline = lines;
+			if (wall_corner_0_u.x < bound.x0) startline = bound.x0 - wall_corner_0_u.x;
+			if (wall_corner_1_u.x > bound.x1) endline = bound.x1 - wall_corner_0_u.x;
+
+			// Ingore non visable walls
+			if (startline > lines || endline < 0) continue;
+
+			for (int line = startline; line <= endline; line++) {
+				int pixelx = wall_corner_0_u.x + line;
+//				assert(pixelx >= bound.x0 && pixelx <= bound.x1);
+				float distance_drawn = (float)line / (float)lines;
+				int y0 = lerp(wall_corner_0_u.y, wall_corner_1_u.y, distance_drawn);
+				int y1 = lerp(wall_corner_0_l.y, wall_corner_1_l.y, distance_drawn);
+				y0 = MAX(y0, 0);
+				y1 = MIN(y1, screen_height);
+				assert(y0 <= y1);
+				vline(canvas, pixelx, 0, y0, 0, 0, 0);
+				vline(canvas, pixelx, y1, screen_height, 0, 0, 0);
+				vline(canvas, pixelx, y0, y1, wallstart.r, wallstart.g, wallstart.b);
+			}
+		} else {
+		 	// In the case of a portal, compute to intersection of the current bound and the portal.
+			struct Bound portalbound = {
+				.x0 = MAX(bound.x0, wall_corner_0_u.x),
+				.x1 = MIN(bound.x1, wall_corner_1_u.x),
+			};
+			// Ensure the bound is not empty
+			if (portalbound.x0 >= portalbound.x1) continue;
+			// Recurse to draw room beond portal
+			render_room(canvas, camera, wallstart.portal_idx, map, portalbound);
 		}
 	}	
 }
@@ -228,7 +276,7 @@ int main(int argc, char** argv) {
 	assert(renderer);
 
 	struct Map* map = load_map_from_file(fopen(mapfile, "r"));
-	struct Camera camera = {.location = {.roomid = 0, .x = 0, .y = -4}};
+	struct Camera camera = {.location = {.roomid = 3, .x = 2.5, .y = 1}};
 
 	// Sanity check, make sure the player has a valid room
 	assert(map->length > camera.location.roomid);
@@ -241,7 +289,7 @@ int main(int argc, char** argv) {
 		SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
 		SDL_RenderClear(renderer);
 
-		render_room(renderer, &camera, camera.location.roomid, map);
+		render_room(renderer, &camera, camera.location.roomid, map, whole_screen(renderer));
 		
 		SDL_RenderPresent(renderer);
 	}
