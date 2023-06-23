@@ -5,22 +5,16 @@
 // |/___x
 //
 
-#include <math.h>
-
-// Trivial Structures for working with multidementional data
-typedef struct Point2 {
-	float x;
-	float y;
-} Point2;
+#include <stdio.h>
+#include "math.h"
 
 // Each room conisists of a serize of walls, defined by a sererse of vertesez, located in 2d space, wich may be a portal connecting to other rooms
 // A portal is denoted by a non negative portal idx, and has a 
 
 struct WallVertex {
 	struct Point2 location;
+	int r, g, b;
 	int portal_idx;
-//	float portal_start_z;
-//	float portak_end_z;
 };
 
 // A list of wall vertexis, length is the amount of points stored.
@@ -57,23 +51,9 @@ struct Map* allocate_map(int lenth);
 // Allocate a test map
 struct Map* new_test_map();
 
+struct Map* load_map_from_file(FILE* file);
+
 void free_room(struct Room*);
 
 void free_map(struct Map*);
 
-// Math functions
-
-#define MAX(a, b) ((a)>(b)?(a):(b))
-#define MIN(a, b) ((a)>(b)?(b):(a))
-
-struct Point2 point2_mul_scaler(struct Point2, float scale);
-struct Point2 point2_div_scaler(struct Point2, float scale);
-
-// Find the intersection of two line segments, returns NAN, NAN if they do not intersect
-struct Point2 intersect_line_segments(Point2 a0, Point2 a1, Point2 b0, Point2 b1);
-
-// Find the intersection point of 2 lines.
-struct Point2 intersect_lines(Point2 a0, Point2 a1, Point2 b0, Point2 b1);
-
-// Linear interpolation
-float lerp(float x0, float x1, float d);

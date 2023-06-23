@@ -1,6 +1,8 @@
 // Structures and functions for working with 3d geometry
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <assert.h>
 #include "map.h"
 
 // Allocated a room with capacity for n Rooms
@@ -42,70 +44,100 @@ struct Map* new_test_map() {
 	
 	room1->walls[3].location.x = -1;
 	room1->walls[3].location.y = 2;
+	
+	room1->walls[0].r = 255;
+	room1->walls[0].g = 0;
+	room1->walls[0].b = 0;
+
+	room1->walls[1].r = 0;
+	room1->walls[1].g = 255;
+	room1->walls[1].b = 0;
+
+	room1->walls[2].r = 0;
+	room1->walls[2].g = 0;
+	room1->walls[2].b = 255;
+
+	room1->walls[3].r = 255;
+	room1->walls[3].g = 255;
+	room1->walls[3].b = 0;
 
 	struct Map* map = allocate_map(1);
 	map->rooms[0] = room1;
 	return map;
 }
 
-struct Point2 point2_mul_scaler(struct Point2 l, float scale) {
-	struct Point2 o = {.x = l.x * scale, .y = l.y * scale};
-	return o;
-}
+// TODO Sainly handle errors insead of exiting.
+struct Map* load_map_from_file(FILE* file) {
+	char* line;
+	int length;
+	int read;
 
-struct Point2 point2_div_scaler(struct Point2 l, float scale) {
-	struct Point2 o = {.x = l.x * scale, .y = l.y * scale};
-	return o;
-}
+	struct Map* map = NULL;
+	int next_room = 0;
+	struct Room* room = NULL;
+	int next_wall = 0;
 
-// Math stolen from https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection#Given_two_points_on_each_line
-struct Point2 intersect_line_segments(Point2 a0, Point2 a1, Point2 b0, Point2 b1) {
-        // The end point of the line segments if translated so that the start is at 0, 0
-	Point2 v0 = {.x = a1.x - a0.x, .y = a1.y - a0.y};
-	Point2 v1 = {.x = b1.x - b0.x, .y = b1.y - b0.y};
+	// For every line in the file...
+	while (1) {
+		line = NULL;
+		read = getline(&line, &length, file);
+		if (read == -1) break;
 
-	float d = (-v1.x * v0.y + v0.x * v1.y);
-	
-	// Lines are collinear or paralel, or very close to it.
-	if (fabsf(d) < 0.00001)
-		return (Point2) {NAN, NAN};
+		// Check for prefixes
+		if (!strncmp("#", line, strlen("#"))) {
+			// Comment, ignore.
+		} else if (!strncmp("MAP ", line, strlen("MAP "))) {
+			// Ensure a map has not already been created
+			assert(!map);
+			int map_size;
+			assert(sscanf(line, "MAP %d\n", &map_size) == 1);
+			map = allocate_map(map_size);
+		} else if (!strncmp("ROOM ", line, strlen("ROOM "))) {
+			// Ensure there is space in the map
+			assert(map);
+			assert(map->length != next_room);
+			// Ensure the last room was filled
+			if (room) assert(room->length == next_room);
 
-	// Find how far along each line segment the intersection is.
-	float t =  (-v0.y * (a0.x - b0.x) + v0.x * (a0.y - b0.y)) / d;
-	float u =  ( v1.x * (a0.y - b0.y) - v1.y * (a0.x - b0.x)) / d;
+			// Allocate the room
+			int room_size;
+			assert(sscanf(line, "ROOM %d\n", &room_size) == 1);
+			room = allocate_room(room_size);
 
-	// If it is withing both segments, return it.
-	if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-                return (Point2) {
-                        a0.x + (u * v0.x),
-                        a0.y + (u * v0.y)
-                };
-        } else {
-                return (Point2) {NAN, NAN};
-        }
-}
+			// Append room to the map
+			map->rooms[next_room++] = room;	
+			next_wall = 0;
+		} else if (!strncmp("WALL ", line, strlen("WALL "))) {
+			// Ensure there is space in the current room
+			assert(room);
+			assert(room->length != next_wall);
+			
+			// Add the wall
+			float x, y;
+			int r,g,b;
+			assert(sscanf(line, "WALL %f %f %d %d %d\n", &x, &y, &r, &g, &b) == 5);
+			room->walls[next_wall].r = r;
+			room->walls[next_wall].g = g;
+			room->walls[next_wall].b = b;
+			room->walls[next_wall].location.x = x;
+			room->walls[next_wall].location.y = y;
+			next_wall++; 
+		} else {
+			printf("Got garbage in map file:\n");
+			printf("%s", line);
+			return NULL;
+		}
+		free(line);
 
-// Math stolen from https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection#Given_two_points_on_each_line
-struct Point2 intersect_lines(Point2 a0, Point2 a1, Point2 b0, Point2 b1) {
-	// The end point of the line segments if translated so that the start is at 0, 0
-	Point2 v0 = {.x = a1.x - a0.x, .y = a1.y - a0.y};
-	Point2 v1 = {.x = b1.x - b0.x, .y = b1.y - b0.y};
+	}
 
-	float d = (-v1.x * v0.y + v0.x * v1.y);
-	
-	// Lines are collinear or paralel, or very close to it.
-	if (fabsf(d) < 0.00001)
-		return (Point2) {NAN, NAN};
+	// Insure map was filled
+	assert(map);
+	assert(map->length == next_room);
 
-	// Find how far along each line segment the intersection is.
-	float u =  ( v1.x * (a0.y - b0.y) - v1.y * (a0.x - b0.x)) / d;
+	// Ensure room was filled
+	if (room) assert(room->length == next_wall);
 
-	return (Point2) {
-		a0.x + (u * v0.x),
-		a0.y + (u * v0.y)
-	};
-}
-
-float lerp(float x0, float x1, float d) {
-	return (x1 * d) + (x0 * (1-d));
+	// All done!
+	return map;
 }

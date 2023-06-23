@@ -2,72 +2,10 @@
 #include <assert.h>
 #include <SDL2/SDL.h>
 
-#define SCREEN_WIDTH   1280
-#define SCREEN_HEIGHT  720
 // How far from the center of the viewing plain (1 unit away from camera) should the screen be?
-#define FOV 1
+#define FOV 0.6
 
-// Graphics initalizeation
-SDL_Window* window_setup() {
-	int windowFlags = 0;
-	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-		printf("Couldn't initialize SDL: %s\n", SDL_GetError());
-		exit(1);
-	}
 
-	SDL_Window* window = SDL_CreateWindow("3d", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, windowFlags);
-
-	if (!window) {
-		printf("Failed to open %d x %d window: %s\n", SCREEN_WIDTH, SCREEN_HEIGHT, SDL_GetError());
-		exit(1);
-	}
-
-	return window;
-}
-
-void do_input(struct Camera* camera) {
-	SDL_Event event;
-	while (SDL_PollEvent(&event)) {
-		switch (event.type) {
-			case SDL_QUIT:
-				exit(0);
-				break;
-			default:
-				break;
-		}
-	}
-
-	uint8_t* keyboard = SDL_GetKeyboardState(NULL);
-
-	// Handle rotation inputs
-	if (keyboard[SDL_SCANCODE_Q]) {
-		camera->angle -= 0.05;
-	}
-	if (keyboard[SDL_SCANCODE_E]) {
-		camera->angle += 0.05;
-	}
-
-	// Vector to store movement intent
-	// The camera is facing y+.
-	Point2 translation = {0, 0};
-	if (keyboard[SDL_SCANCODE_W]) {
-		translation.y += 0.05;
-	}
-	if (keyboard[SDL_SCANCODE_S]) {
-		translation.y -= 0.05;
-	}
-	if (keyboard[SDL_SCANCODE_A]) {
-		translation.x -= 0.05;
-	}
-	if (keyboard[SDL_SCANCODE_D]) {
-		translation.x += 0.05;
-	}
-	
-	// Rotate intent vector by *negative* camera rotation.
-	float angle = -camera->angle;
-	camera->location.x += translation.x * cos(angle) - translation.y * sin(angle);
-	camera->location.y += translation.x * sin(angle) + translation.y * cos(angle);
-}
 
 /////////////////////////
 // Graphics Primitives //
@@ -150,7 +88,11 @@ int clip_to_frustum(Point2* w0, Point2* w1, float fov) {
 	return 1;
 }
 
+// This is the main rendering function, it renders a single room (section of convex geometry).
 void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct Map* map) {
+	int screen_height, screen_width;
+	assert(!SDL_GetRendererOutputSize(canvas, &screen_width, &screen_height));
+
 	// Calculate and store sin and cos of camera angle, this is required for rotation
 	camera->angle_cos = cos(camera->angle);
 	camera->angle_sin = sin(camera->angle);
@@ -181,11 +123,11 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 		// If this is not the case, we are looking at the backside of the wall, and should skip rendering it
 		if (cspace1.x/cspace1.y <= cspace0.x/cspace0.y) continue;
 		
-		// Map to screen space	
-		struct Point2 wall_corner_0_u = camera_to_pixel_space(cspace0, 0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
-		struct Point2 wall_corner_0_l = camera_to_pixel_space(cspace0, -0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
-		struct Point2 wall_corner_1_u = camera_to_pixel_space(cspace1, 0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
-		struct Point2 wall_corner_1_l = camera_to_pixel_space(cspace1, -0.5, SCREEN_HEIGHT, SCREEN_WIDTH, FOV);
+		// Project to screen space	
+		struct Point2 wall_corner_0_u = camera_to_pixel_space(cspace0, 0.5, screen_height, screen_width, FOV);
+		struct Point2 wall_corner_0_l = camera_to_pixel_space(cspace0, -0.5, screen_height, screen_width, FOV);
+		struct Point2 wall_corner_1_u = camera_to_pixel_space(cspace1, 0.5, screen_height, screen_width, FOV);
+		struct Point2 wall_corner_1_l = camera_to_pixel_space(cspace1, -0.5, screen_height, screen_width, FOV);
 
 		// Draw filled trapiziod defined by projected points, and fill the area above and below black
 		// There might be a faster drawing algoritm than this
@@ -197,23 +139,95 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 			int y0 = lerp(wall_corner_0_u.y, wall_corner_1_u.y, distance_drawn);
 			int y1 = lerp(wall_corner_0_l.y, wall_corner_1_l.y, distance_drawn);
 			y0 = MAX(y0, 0);
-			y1 = MIN(y1, SCREEN_HEIGHT);
+			y1 = MIN(y1, screen_height);
 			assert(y0 <= y1);
 			vline(canvas, pixelx, 0, y0, 0, 0, 0);
-			vline(canvas, pixelx, y1, SCREEN_HEIGHT, 0, 0, 0);
-			vline(canvas, pixelx, y0, y1, 255, 255, 255);
+			vline(canvas, pixelx, y1, screen_height, 0, 0, 0);
+			vline(canvas, pixelx, y0, y1, wallstart.r, wallstart.g, wallstart.b);
 		}
 	}	
 }
 
-int main() {
+/////////////
+// UI code //
+/////////////
+
+SDL_Window* window_setup() {
+	int windowFlags = SDL_WINDOW_RESIZABLE;
+	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+		printf("Couldn't initialize SDL: %s\n", SDL_GetError());
+		exit(1);
+	}
+
+	SDL_Window* window = SDL_CreateWindow("3d", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 1200, 720, windowFlags);
+
+	if (!window) {
+		printf("Failed to open window: %s\n", SDL_GetError());
+		exit(1);
+	}
+
+	return window;
+}
+
+void do_input(struct Camera* camera) {
+	SDL_Event event;
+	while (SDL_PollEvent(&event)) {
+		switch (event.type) {
+			case SDL_QUIT:
+				exit(0);
+				break;
+			default:
+				break;
+		}
+	}
+
+	uint8_t* keyboard = SDL_GetKeyboardState(NULL);
+
+	// Handle rotation inputs
+	if (keyboard[SDL_SCANCODE_Q]) {
+		camera->angle -= 0.05;
+	}
+	if (keyboard[SDL_SCANCODE_E]) {
+		camera->angle += 0.05;
+	}
+
+	// Vector to store movement intent
+	// The camera is facing y+.
+	Point2 translation = {0, 0};
+	if (keyboard[SDL_SCANCODE_W]) {
+		translation.y += 0.1;
+	}
+	if (keyboard[SDL_SCANCODE_S]) {
+		translation.y -= 0.1;
+	}
+	if (keyboard[SDL_SCANCODE_A]) {
+		translation.x -= 0.1;
+	}
+	if (keyboard[SDL_SCANCODE_D]) {
+		translation.x += 0.1;
+	}
+	
+	// Rotate intent vector by *negative* camera rotation.
+	float angle = -camera->angle;
+	camera->location.x += translation.x * cos(angle) - translation.y * sin(angle);
+	camera->location.y += translation.x * sin(angle) + translation.y * cos(angle);
+}
+
+int main(int argc, char** argv) {
+	if (argc != 2) {
+		printf("Usage: %s [mapfile]\n", argv[0]);
+		return 1;
+	}
+
+	char* mapfile = argv[1];
+
 	// Open a window
 	SDL_Window* window = window_setup();
 	assert(window);
-	SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
+	SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC); 
 	assert(renderer);
 
-	struct Map* map = new_test_map();
+	struct Map* map = load_map_from_file(fopen(mapfile, "r"));
 	struct Camera camera = {.location = {.roomid = 0, .x = 0, .y = -4}};
 
 	// Sanity check, make sure the player has a valid room
