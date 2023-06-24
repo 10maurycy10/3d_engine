@@ -1,7 +1,7 @@
 # A 3x3 space, with a 1x1 pilar inside
-MAP 4
+MAP 4 0 0.5 0.5
 # First room, the lower part of the space
-ROOM 6
+ROOM 6 -0.5 0.5
 WALL 0 0 255 0 0
 PORTAL 0 1 1
 WALL 1 1 1 0 255 0
@@ -9,19 +9,19 @@ PORTAL 2 1 2
 WALL 3 1 0 0 255
 WALL 3 0 255 255 0
 # Second room, the left part
-ROOM 4
+ROOM 4 -0.5 0.5
 WALL 0 1 0 255 255
 PORTAL 0 2 3
 WALL 1 2 255 0 0
 PORTAL 1 1 0
 # Third room, the right part
-ROOM 4
+ROOM 4 -0.5 0.5
 WALL 2 1 0 255 255
 PORTAL 2 2 3
 WALL 3 2 255 255 255
 PORTAL 3 1 0
 # Forth room, the top part
-ROOM 6
+ROOM 6 -0.5 0.5
 WALL 0 2 128 0 0
 WALL 0 3 255 0 0
 WALL 3 3 0 128 0

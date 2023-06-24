@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <math.h>
 #include "map.h"
 
 // Allocated a room with capacity for n Rooms
@@ -91,8 +92,13 @@ struct Map* load_map_from_file(FILE* file) {
 			// Ensure a map has not already been created
 			assert(!map);
 			int map_size;
-			assert(sscanf(line, "MAP %d\n", &map_size) == 1);
+			int starting_room = 0;
+			float start_x = 0, start_y = 0;
+			assert(sscanf(line, "MAP %d %d %f %f\n", &map_size, &starting_room, &start_x, &start_y) >= 1);
 			map = allocate_map(map_size);
+			map->starting_room = starting_room;
+			map->starting_location.x = start_x;
+			map->starting_location.y = start_y;
 		} else if (!strncmp("ROOM ", line, strlen("ROOM "))) {
 			// Ensure there is space in the map
 			assert(map);
@@ -102,8 +108,11 @@ struct Map* load_map_from_file(FILE* file) {
 
 			// Allocate the room
 			int room_size;
-			assert(sscanf(line, "ROOM %d\n", &room_size) == 1);
+			float z0 = -1, z1 = 1;
+			assert(sscanf(line, "ROOM %d %f %f\n", &room_size, &z0, &z1) >= 1);
 			room = allocate_room(room_size);
+			room->z0 = z0;
+			room->z1 = z1;
 
 			// Append room to the map
 			map->rooms[next_room++] = room;	
@@ -159,4 +168,22 @@ struct Map* load_map_from_file(FILE* file) {
 
 	// All done!
 	return map;
+}
+
+int room_collide(struct Room* room, Point2 p0, Point2 p1, Point2* point_of_collision) {
+	// For every wall
+	for (int wallidx = 0; wallidx < room->length; wallidx++) {
+		struct WallVertex* wall0 = &room->walls[wallidx];
+		// Get the endpoint of the wall
+		struct WallVertex* wall1;
+		if (wallidx + 1 == room->length) wall1 = &room->walls[0];
+		if (wallidx + 1 != room->length) wall1 = &room->walls[wallidx + 1];
+		// Check collisions
+		Point2 intersection = intersect_line_segments(p0, p1, wall0->location, wall1->location);
+		if (isnormal(intersection.x)) {
+			if (point_of_collision) *point_of_collision = intersection;
+			return wallidx;
+		}
+	}
+	return -1;
 }

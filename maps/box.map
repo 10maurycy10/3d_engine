@@ -1,6 +1,6 @@
 # Simple test map, containing a single room with 4 walls centered on the origin
 MAP 1
-ROOM 4
+ROOM 4 -0.5 0.5
 WALL -1.5 -1.5 255 0 0
 WALL -1.5 1.5 0 255 0 0
 WALL 1.5 1.5 0 0 255
