@@ -10,6 +10,7 @@
 /////////////////////////
 
 void vline(SDL_Renderer* canvas, int x, int y0, int y1, int r, int g, int b) {
+	// Using SDL's drawing functions here feals like cheating, but avoids having to manage my own pixel buffer.
 	SDL_SetRenderDrawColor(canvas, r, g, b, 255);
 	SDL_RenderDrawLine(canvas, x, y0, x, y1);
 }
@@ -163,9 +164,22 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 		struct Point2 wall_corner_1_u = camera_to_pixel_space(cspace1, room->z1 - camera->z, h, w, FOV);
 		struct Point2 wall_corner_1_l = camera_to_pixel_space(cspace1, room->z0 - camera->z, h, w, FOV);
 
+		// In the case that the z size of the rooms connected are different, a portal will have a different size trough witch the room is actualy visible
+		struct Point2 portal_inside_0_u, portal_inside_0_l, portal_inside_1_l, portal_inside_1_u;
+		if (wallstart.portal_idx != -1) {
+			struct Room* nextroom = map->rooms[wallstart.portal_idx];
+			// Compute how much of the portal is blocked off
+			float bottom_height = MAX(0, nextroom->z0 - room->z0);
+			float top_height = MAX(0, room->z1 - nextroom->z1);
+			portal_inside_0_l = camera_to_pixel_space(cspace0, room->z0 - camera->z + bottom_height, h, w, FOV);
+			portal_inside_0_u = camera_to_pixel_space(cspace0, room->z1 - camera->z - top_height, h, w, FOV);
+			portal_inside_1_l = camera_to_pixel_space(cspace1, room->z0 - camera->z + bottom_height, h, w, FOV);
+			portal_inside_1_u = camera_to_pixel_space(cspace1, room->z1 - camera->z - top_height, h, w, FOV);
+		}
+
 		// Draw filled trapiziod defined by projected points, and fill the area above and below black
 		// There might be a faster drawing algoritm than this
-		int lines = wall_corner_1_u.x - wall_corner_0_u.x;
+		int lines = (int)(wall_corner_1_u.x - wall_corner_0_u.x);
 		if (lines == 0) continue;
 
 		// Take bounds into account
@@ -180,11 +194,12 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 		for (int line = startline; line <= endline; line++) {
 			int pixelx = wall_corner_0_u.x + line;
 			float distance_drawn = (float)line / (float)lines;
-			int y0 = lerp(wall_corner_0_u.y, wall_corner_1_u.y, distance_drawn);
-			int y1 = lerp(wall_corner_0_l.y, wall_corner_1_l.y, distance_drawn);
-			// Avoid drawing ontop of walls in previos sectors
-			y0 = MAX(y0, y_min[pixelx]);
-			y1 = MIN(y1, y_max[pixelx]);
+			// Interplolate between the endpoint positions to get the the height at the current x position
+			int y0_unclamped = lerp(wall_corner_0_u.y, wall_corner_1_u.y, distance_drawn);
+			int y1_unclamped = lerp(wall_corner_0_l.y, wall_corner_1_l.y, distance_drawn);
+			// Clamp to the y bounds to avoid drawing over previos rooms
+			int y0 = MAX(y0_unclamped, y_min[pixelx]);
+			int y1 = MIN(y1_unclamped, y_max[pixelx]);
 			
 			// Draw floor
 			vline(canvas, pixelx, y_min[pixelx], y0, floor_r, floor_g, floor_b);
@@ -194,9 +209,22 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 			}
 			// Draw the cleiling
 			vline(canvas, pixelx, y1, y_max[pixelx], floor_r, floor_g, floor_b);
-
-			y_min[pixelx] = y0;
-			y_max[pixelx] = y1;
+			
+			if (wallstart.portal_idx != -1) {
+				// If this is a portal, draw the top and bottom sections, then set the y bounds to the inside of the portal, and finaly recurse.
+				struct Room* nextroom = map->rooms[wallstart.portal_idx];
+				// Compute worldspace height of the top and bottom sections of the portal.
+				int portal_top_y = lerp(portal_inside_0_u.y, portal_inside_1_u.y, distance_drawn);
+				int portal_bottom_y = lerp(portal_inside_0_l.y, portal_inside_1_l.y, distance_drawn);
+				portal_top_y = MAX(y_min[pixelx], portal_top_y);
+				portal_bottom_y = MIN(y_max[pixelx], portal_bottom_y);
+				// draw the upper part of the portal, updating bounds
+				vline(canvas, pixelx, y0, portal_top_y, wallstart.r, wallstart.g, wallstart.b);
+				y_min[pixelx] = portal_top_y;
+				// draw the bottom of the portal, updating bounds
+				vline(canvas, pixelx, portal_bottom_y, y1, wallstart.r, wallstart.g, wallstart.b);
+				y_max[pixelx] = portal_bottom_y;
+			}
 		}
 		if (wallstart.portal_idx != -1){
 		 	// In the case of a portal, compute to intersection of the current bound and the portal.

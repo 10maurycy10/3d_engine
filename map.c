@@ -140,11 +140,12 @@ struct Map* load_map_from_file(FILE* file) {
 			
 			// Add the portal
 			float x, y;
+			int r = 255, g = 0, b = 255;
 			int portalidx;
-			assert(sscanf(line, "PORTAL %f %f %d\n", &x, &y, &portalidx) == 3);
-			room->walls[next_wall].r = 255;
-			room->walls[next_wall].g = 0;
-			room->walls[next_wall].b = 255;
+			assert(sscanf(line, "PORTAL %f %f %d %d %d %d\n", &x, &y, &portalidx, &r, &g, &b) >= 3);
+			room->walls[next_wall].r = r;
+			room->walls[next_wall].g = g;
+			room->walls[next_wall].b = b;
 
 			room->walls[next_wall].portal_idx = portalidx;
 			room->walls[next_wall].location.x = x;
