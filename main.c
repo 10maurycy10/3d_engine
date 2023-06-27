@@ -3,9 +3,7 @@
 #include <SDL2/SDL.h>
 
 // How far from the center of the viewing plain (1 unit away from camera) should the screen be?
-#define FOV .6
-
-#define NEW_RENDER 1
+#define FOV .4
 
 /////////////////////////
 // Graphics Primitives //
@@ -58,8 +56,9 @@ Point2 camera_to_pixel_space(Point2 camera, float z, float screenh, float screen
 // Cliping //
 /////////////
 
-// This computes how much of a wall is visable, storing the start and end in w1
+// This computes how much of a wall is visable, storing the start and end in w1 and w0
 // Returns false if the wall is fully outside, true otherwize
+// The does not currently check against 
 int clip_to_frustum(Point2* w0, Point2* w1, float fov) {
 	float near_plane = 0.001;
 
@@ -77,41 +76,6 @@ int clip_to_frustum(Point2* w0, Point2* w1, float fov) {
 	}
 
 	return 1;
-	
-	// Clip by angle
-	float angle0 = w0->x / w0->y;
-	float angle1 = w1->x / w1->y;
-	
-	// If both endpoints are out of view, on the same side, reject the wall
-	if (angle0 > fov && angle1 > fov) return 0;
-	if (angle0 < -fov && angle1 < -fov) return 0;
-	
-	// Otherwize, move the points inside of the view.
-	if (angle1 > fov) *w1 = intersect_lines((Point2) {0, 0}, (Point2) {fov, 1}, *w0, *w1);
-	if (angle1 < -fov) *w1 = intersect_lines((Point2) {0, 0}, (Point2) {-fov, 1}, *w0, *w1);
-	
-	if (angle0 > fov) *w0 = intersect_lines((Point2) {0, 0}, (Point2) {fov, 1}, *w0, *w1);
-	if (angle0 < -fov) *w0 = intersect_lines((Point2) {0, 0}, (Point2) {-fov, 1}, *w0, *w1);
-
-
-	return 1;
-}
-
-//////////////////////////////////////////////////////////////////////////////////
-// X Bound                                                                      //
-// this allows the renderer to avoid drawing part of a room that is not visable //
-//////////////////////////////////////////////////////////////////////////////////
-
-typedef struct Bound {
-	int x0;
-	int x1;
-} Bound;
-
-Bound whole_screen(int w) {
-	return (Bound) {
-		.x0 = 0,
-		.x1 = w,
-	};
 }
 
 //////////////
@@ -120,17 +84,18 @@ Bound whole_screen(int w) {
 
 // The main rendering function, renders a room (roomid) from the the point of view of the camera, to canvas.
 // It will recurse to draw portals, so any connecting geometry visable trough the room is also drawn.
-// All drawing is within the x bounds given by the Bound struct (bound) and the y bounds in x_min and y_max.
+// All drawing is within the x bounds given by the x_min and x_max and the y bounds in x_min and y_max.
 // h and w are the screen dimentions.
-void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct Map* map, struct Bound bound, int w, int h, int y_min[], int y_max[]) {
+void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct Map* map, int w, int h, int x_min, int x_max, int y_min[], int y_max[]) {
 	// Recaculate the sin and cos of the camera angle
 	camera->angle_cos = cos(camera->angle);
 	camera->angle_sin = sin(camera->angle);
 	
 	struct Room* room = map->rooms[roomid];
 
-	// For every wall in the room...
+	// Draw every wall in a room
 	for (int wallid = 0; wallid < room->length; wallid++) {
+		// Find the endpoints of the wall
 		struct WallVertex* w0 = &room->walls[wallid];
 		struct WallVertex* w1;
 		if (wallid+1 < room->length) {
@@ -139,23 +104,23 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 			w1 = &room->walls[0];
 		}
 
-		// Transform into camera relitive cordinates
+		// Transform into camera relative cordinates
 		Point2 p0 = world_to_camera_space(camera, w0->location);	
 		Point2 p1 = world_to_camera_space(camera, w1->location);	
 		
-		// Dont render if behind the camera
+		// Don't render walls if behind the camera
 		if (!clip_to_frustum(&p0, &p1, 0.4)) continue;
 		
-		// Project to screen space
+		// Project wall endpoints to screen space
 		Point2 w0_upper = camera_to_pixel_space(p0, room->z1 - camera->z, h, w, FOV);
 		Point2 w0_lower = camera_to_pixel_space(p0, room->z0 - camera->z, h, w, FOV);
 		Point2 w1_upper = camera_to_pixel_space(p1, room->z1 - camera->z, h, w, FOV);
 		Point2 w1_lower = camera_to_pixel_space(p1, room->z0 - camera->z, h, w, FOV);
 		
+		// In the case of portals, do some more projection to find where the top and bottom portions of the portal should be
 		Point2 portal0_lower, portal0_upper, portal1_lower, portal1_upper;
 		if (w0->portal_idx != -1) {
 			int portal = w0->portal_idx;
-			// Compute the height og the top and bottom sections
 			float bottom_height = MAX(0, map->rooms[portal]->z0 - room->z0);
 			float top_height = MAX(0, room->z1 - map->rooms[portal]->z1);
 			portal0_lower = camera_to_pixel_space(p0, room->z0 - camera->z + bottom_height, h, w, FOV);
@@ -165,13 +130,13 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 		}
 
 		// Limit the draw portion of the wall to the screen
-		int x0 = MAX(bound.x0, w0_upper.x);
-		int x1 = MIN(bound.x1, w1_upper.x);
+		int x0 = MAX(x_min, w0_upper.x);
+		int x1 = MIN(x_max, w1_upper.x);
 		
 		// Dont draw walls facing away from the player, or with zero size.
 		if (x0 >= x1) continue;
 
-		// For every pixel along the wall
+		// For every pixel along the wall, draw the floor, ceiling, and the wal
 		for (int x = x0; x < x1; x++) {
 			int pixels_drawn = x - w0_upper.x;
 			float part_drawn = (float)pixels_drawn / (w1_upper.x - w0_upper.x);
@@ -184,8 +149,6 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 			y0 = MAX(y_min[x], y0); y1 = MIN(y_max[x], y1);
 
 			// Draw in the floor and ceiling, and in the case of a normal wall, draw it in.
-			//vline(canvas, x, y_min[x], y0, roomid * 32%256, (roomid+1) * 64%256, (roomid+2)*128%256);
-			//vline(canvas, x, y1, y_max[x], roomid * 32%256, (roomid+1) * 64%256, (roomid+2)*128%256);
 			vline(canvas, x, y_min[x], y0, 0, 0, 64);
 			vline(canvas, x, y1, y_max[x], 64, 64, 64);
 			if (w0->portal_idx == -1) vline(canvas, x, y0, y1, w0->r, w0->g, w0->b);
@@ -210,7 +173,10 @@ void render_room(SDL_Renderer* canvas, struct Camera* camera, int roomid, struct
 		}
 		
 		if (w0->portal_idx != -1) {
-			render_room(canvas, camera, w0->portal_idx, map, (Bound) {.x0 = x0, .x1 = x1}, w, h, y_min, y_max);
+			// Recurse to draw objects beond a portal
+			// The x bounds are simply the space that the portal would have been drawn in if it was a wall
+			// The y bounds are set while drawing the floor, ceiling and top and bottom sections.
+			render_room(canvas, camera, w0->portal_idx, map, w, h, x0, x1, y_min, y_max);
 		}
 	}
 }
@@ -237,20 +203,16 @@ SDL_Window* window_setup() {
 }
 
 void do_input(struct Map* map, struct Camera* camera) {
-
-	camera->z = map->rooms[camera->room_idx]->z0 + 1;
-
+	// Check if the user wants to close the window
 	SDL_Event event;
 	while (SDL_PollEvent(&event)) {
 		switch (event.type) {
 			case SDL_QUIT:
 				exit(0);
 				break;
-			default:
-				break;
 		}
 	}
-
+	
 	uint8_t* keyboard = SDL_GetKeyboardState(NULL);
 
 	// Handle rotation inputs
@@ -278,39 +240,35 @@ void do_input(struct Map* map, struct Camera* camera) {
 	}
 
 	Point2 old_location = camera->location;
-	
-	// Rotate intent vector by *negative* camera rotation.
+	// Simple function to check collisions between old_location and camera->location,
+	// updateing camera->location and camera->room_idx as needed
+	void check_collide() {
+		int collision = room_collide(map->rooms[camera->room_idx], camera->location, old_location, NULL);
+		if (collision != -1) {
+			struct WallVertex wall = map->rooms[camera->room_idx]->walls[collision];
+			if (wall.portal_idx != -1) {
+				// Portal, allow movement, but update roomidx
+				camera->room_idx = wall.portal_idx;
+			} else {
+				// Wall, ignore movement
+				camera->location = old_location;
+			}
+		}
+	}
+
+	// Movement is split between the x and y directions so that the player doesnt get snagged on walls	
 	float angle = -camera->angle;
 	camera->location.x += translation.x * cos(angle) - translation.y * sin(angle);
 	
-	// Check for collisions
-	int collision = room_collide(map->rooms[camera->room_idx], camera->location, old_location, NULL);
-	if (collision != -1) {
-		struct WallVertex wall = map->rooms[camera->room_idx]->walls[collision];
-		if (wall.portal_idx != -1) {
-			// Portal, allow movement, but update roomidx
-			camera->room_idx = wall.portal_idx;
-		} else {
-			// Wall, ignore movement
-			camera->location = old_location;
-		}
-	}
-	
+	check_collide();
 	old_location = camera->location;
+
 	camera->location.y += translation.x * sin(angle) + translation.y * cos(angle);
 	
-	// Check for collisions
-	collision = room_collide(map->rooms[camera->room_idx], camera->location, old_location, NULL);
-	if (collision != -1) {
-		struct WallVertex wall = map->rooms[camera->room_idx]->walls[collision];
-		if (wall.portal_idx != -1) {
-			// Portal, allow movement, but update roomidx
-			camera->room_idx = wall.portal_idx;
-		} else {
-			// Wall, ignore movement
-			camera->location = old_location;
-		}
-	}
+	check_collide();
+
+	// Update camera z to be 1 unit above the floor.
+	camera->z = map->rooms[camera->room_idx]->z0 + 1;
 }
 
 int main(int argc, char** argv) {
@@ -329,9 +287,6 @@ int main(int argc, char** argv) {
 
 	struct Map* map = load_map_from_file(fopen(mapfile, "r"));
 	struct Camera camera = {.location = map->starting_location, .room_idx=map->starting_room, .z=0};
-//	camera.location.x = 0;
-//	camera.location.y = -10;
-
 
 	while (1) {
 		// Handle inputs
@@ -353,7 +308,7 @@ int main(int argc, char** argv) {
 		for (int i = 0; i < w; i++) y0[i] = 0;
 		for (int i = 0; i < w; i++) y1[i] = h;
 		
-		render_room(renderer, &camera, camera.room_idx, map, whole_screen(w), w, h, y0, y1);
+		render_room(renderer, &camera, camera.room_idx, map, w, h, 0, w, y0, y1);
 
 		free(y0); free(y1);
 	
