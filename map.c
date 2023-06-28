@@ -82,7 +82,6 @@ struct Map* load_map_from_file(FILE* file) {
 	while (1) {
 		line = NULL;
 		read = getline(&line, &length, file);
-		printf("%s", line);
 		if (read == -1) break;
 
 		// Check for prefixes
