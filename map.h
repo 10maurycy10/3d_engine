@@ -14,6 +14,7 @@
 struct WallVertex {
 	struct Point2 location;
 	int r, g, b;
+	int texture;
 	int portal_idx;
 };
 
@@ -21,6 +22,7 @@ struct WallVertex {
 // This sould be heep allocated
 // The wall vertecis must have a given order, so that from inside the room, the x cordinates are in acending order
 struct Room {
+	int floor_texture;
 	int length;
 	float z0;
 	float z1;

@@ -87,6 +87,8 @@ struct Map* load_map_from_file(FILE* file) {
 		// Check for prefixes
 		if (!strncmp("#", line, strlen("#"))) {
 			// Comment, ignore.
+		} else if (!strncmp("TEXTURE ", line, strlen("TEXTURE "))) {
+			// TODO load textures
 		} else if (!strncmp("MAP ", line, strlen("MAP "))) {
 			// Ensure a map has not already been created
 			assert(!map);
@@ -108,10 +110,12 @@ struct Map* load_map_from_file(FILE* file) {
 			// Allocate the room
 			int room_size;
 			float z0 = -1, z1 = 1;
-			assert(sscanf(line, "ROOM %d %f %f\n", &room_size, &z0, &z1) >= 1);
+			int floor_texture = -1;
+			assert(sscanf(line, "ROOM %d %f %f %d\n", &room_size, &z0, &z1, &floor_texture) >= 1);
 			room = allocate_room(room_size);
 			room->z0 = z0;
 			room->z1 = z1;
+			room->floor_texture = floor_texture;
 
 			// Append room to the map
 			map->rooms[next_room++] = room;	
@@ -124,10 +128,12 @@ struct Map* load_map_from_file(FILE* file) {
 			// Add the wall
 			float x, y;
 			int r,g,b;
-			assert(sscanf(line, "WALL %f %f %d %d %d\n", &x, &y, &r, &g, &b) == 5);
+			int texture;
+			assert(sscanf(line, "WALL %f %f %d %d %d %d\n", &x, &y, &r, &g, &b, &texture) >= 5);
 			room->walls[next_wall].r = r;
 			room->walls[next_wall].g = g;
 			room->walls[next_wall].b = b;
+			room->walls[next_wall].texture = texture;
 			room->walls[next_wall].portal_idx = -1;
 			room->walls[next_wall].location.x = x;
 			room->walls[next_wall].location.y = y;

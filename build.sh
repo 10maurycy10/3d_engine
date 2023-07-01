@@ -1,2 +1,2 @@
 #!/bin/sh
-gcc map.c math.c main.c -o game -Wall -std=c99 -lSDL2 -lm -gdwarf
+gcc map.c math.c main.c -o game -Wall -std=c99 -lSDL2 -lm -gdwarf -lSDL2_image -O3
